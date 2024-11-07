@@ -5,7 +5,7 @@ import os
 import signal
 import sys
 from gqrx_control import create_gqrx_socket, get_dfbs, close_gqrx_socket, get_radio_info
-from rigctl_control import create_rigctl_socket, set_azimuth_elevation, close_rigctl_socket
+from rotctl_control import create_rotctl_socket, set_azimuth_elevation, close_rotctl_socket
 
 
 # Helper function to dump data to JSON
@@ -43,7 +43,7 @@ def handle_exit(signum, frame):
     print("\nProgram interrupted. Saving data...")
     dump_json(result_dict, result_list, incomplete=True)
     close_gqrx_socket(gqrx_socket)
-    close_rigctl_socket(rig_socket)
+    close_rotctl_socket(rig_socket)
     sys.exit(0)
 
 
@@ -56,12 +56,12 @@ if __name__ == "__main__":
     # Set up connection details
     gqrx_port = 7356
     gqrx_host = "localhost"
-    rigctl_port = 4533
+    rotctl_port = 4533
     righost = "172.20.38.211"
     
-    # Connect to gqrx and rigctl
+    # Connect to gqrx and rotctl
     gqrx_socket = create_gqrx_socket(gqrx_host, gqrx_port)
-    rig_socket = create_rigctl_socket(righost, rigctl_port)
+    rig_socket = create_rotctl_socket(righost, rotctl_port)
     
     # Gather radio information
     radio_info_dict = get_radio_info(gqrx_socket)
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     # Ensure data is dumped and connections are closed
     dump_json(result_dict, result_list)
     close_gqrx_socket(gqrx_socket)
-    close_rigctl_socket(rig_socket)
+    close_rotctl_socket(rig_socket)
     print("Data saved and connections closed.")
     
     # Generate plot
