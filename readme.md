@@ -30,3 +30,4 @@ Here are some examples of the generated plots
 - [ ] Add max and min angles for azimuth and elevation
 - [ ] pipeline to automate testing over time
 - [ ] add proper logging
+- [ ] better error handling 
