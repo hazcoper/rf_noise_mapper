@@ -1,124 +1,94 @@
-"""
-This is a simple program that will be used to create a noise image of the surrounding area.
-it will use and antena, a rotor and sdr to take the measurments
-
-consists of two parts:
-    generating the data
-        recording iq, sending commands to the rotor
-    generating the image
-        using the recording, generate the image
-
-things that I need to be able to do:
-    1. interface with gqrx to control the recording
-    2. interface with the rotor to control the direction
-    3. process the data to generate the image
-    
-actually i cant start raw iq recording remotely, so i will just get the dfbs from from grqx and use that to generate the image
-    l STRENGTH 
-    
-it will save all the aquired data to a json that can be later used to generate the desired images
-
-"""
-
 import time
 import json
 import datetime
 import os
-
+import signal
+import sys
 from gqrx_control import create_gqrx_socket, get_dfbs, close_gqrx_socket, get_radio_info
 from rigctl_control import create_rigctl_socket, set_azimuth_elevation, close_rigctl_socket
 
 
+# Helper function to dump data to JSON
+def dump_json(result_dict, result_list, incomplete=False):
+    print("Sabing json data...")
+    end_time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    result_dict["end_time"] = end_time_str
+    result_dict["results"] = result_list
+
+    folder = "results"
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    
+    name = f"{start_time_str}_{end_time_str}_{total_steps}"
+    if incomplete:
+        name += "_incomplete"
+    
+    filename = f"{folder}/{name}.json"
+
+    with open(filename, "w") as f:
+        json.dump(result_dict, f)
 
 
-def take_measurmnet(gqrx_socket, average_wait_time):
-    """
-    Takes a measurment of the signal strength and returns the average value
-    """
+# Measurement function
+def take_measurement(gqrx_socket, average_wait_time):
     dfbs = 0
     for i in range(average_wait_time):
         dfbs += get_dfbs(gqrx_socket)
         time.sleep(1)
-    return dfbs/average_wait_time
+    return dfbs / average_wait_time
 
 
-
-if __name__ == "__main__":
-    
-    # connect to gqrx and to rigtctl
-    gqrx_port = 7356
-    gqrx_host = "localhost"
-
-    rigctl_port = 4533
-    righost = "172.20.38.211"
-        
-    gqrx_socket = create_gqrx_socket(gqrx_host, gqrx_port)    
-    rig_socket = create_rigctl_socket(righost, rigctl_port)
-    
-    # gather radio information
-    radio_info_dict = get_radio_info(gqrx_socket)
-    
-    scan_azimuth_step = 5
-    scan_elevation_step = 10
-    
-    start_azimuth = 10
-    end_azimuth = 360
-    
-    start_elevation = 10
-    end_elevation = 50
-    
-    average_wait_time = 3    # the time to wait to average the signal
-    movement_wait_time = 10   # the time to wait for the rotor to move and stabilize
-    
-    # estimate the duration of the test
-    azimuth_steps = (end_azimuth - start_azimuth) // scan_azimuth_step
-    elevation_steps = (end_elevation - start_elevation) // scan_elevation_step
-    
-    total_steps = azimuth_steps * elevation_steps
-    total_duration = total_steps * (average_wait_time + movement_wait_time)
-    print(f"Total duration of the test: {total_duration} seconds")
-    print(f"Total duration of the test: {total_duration/60} minutes")
-    print(f"Total number of steps in the test: {total_steps}")
-    
-    result_list = []
-    
-    start_time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    
-    # perform the test
-    # start at the smallest azimuth and elevation
-    # go from left to right to the azimuth
-    # increase the elevation by one step
-    # go from right to left in the azimuth
-    elevation_counter = 0
-    for elevation in range(start_elevation, end_elevation, scan_elevation_step):
-        if elevation_counter % 2 == 0:
-            for azimuth in range(start_azimuth, end_azimuth+scan_azimuth_step, scan_azimuth_step):
-                print(f"Taking measurment at azimuth: {azimuth}, elevation: {elevation}")
-                set_azimuth_elevation(rig_socket, azimuth, elevation)
-                time.sleep(movement_wait_time)
-                dfbs = take_measurmnet(gqrx_socket, average_wait_time)
-                result_list.append((azimuth, elevation, dfbs))
-        else:
-            for azimuth in range(end_azimuth, start_azimuth-scan_azimuth_step, -scan_azimuth_step):
-                print(f"Taking measurment at azimuth: {azimuth}, elevation: {elevation}")
-                set_azimuth_elevation(rig_socket, azimuth, elevation)
-                time.sleep(movement_wait_time)
-                dfbs = take_measurmnet(gqrx_socket, average_wait_time)
-                result_list.append((azimuth, elevation, dfbs))
-
-        elevation_counter += 1
-        print()
-    
-    end_time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    # close the connections
+# Signal handler to handle interruption and ensure data is saved
+def handle_exit(signum, frame):
+    print("\nProgram interrupted. Saving data...")
+    dump_json(result_dict, result_list, incomplete=True)
     close_gqrx_socket(gqrx_socket)
     close_rigctl_socket(rig_socket)
+    sys.exit(0)
+
+
+# Register signal handler for SIGINT (Ctrl+C)
+signal.signal(signal.SIGINT, handle_exit)
+
+if __name__ == "__main__":
+    result_dict = {}
     
-    # save data in json containing information about the test. add the time to the file name    
+    # Set up connection details
+    gqrx_port = 7356
+    gqrx_host = "localhost"
+    rigctl_port = 4533
+    righost = "172.20.38.211"
+    
+    # Connect to gqrx and rigctl
+    gqrx_socket = create_gqrx_socket(gqrx_host, gqrx_port)
+    rig_socket = create_rigctl_socket(righost, rigctl_port)
+    
+    # Gather radio information
+    radio_info_dict = get_radio_info(gqrx_socket)
+    
+    # Define scan parameters
+    scan_azimuth_step = 5
+    scan_elevation_step = 10
+    start_azimuth = 10
+    end_azimuth = 360
+    start_elevation = 10
+    end_elevation = 50
+    average_wait_time = 3    # Time to average the signal
+    movement_wait_time = 10  # Wait time for rotor stabilization
+    
+    # Estimate duration
+    azimuth_steps = (end_azimuth - start_azimuth) // scan_azimuth_step
+    elevation_steps = (end_elevation - start_elevation) // scan_elevation_step
+    total_steps = azimuth_steps * elevation_steps
+    total_duration = total_steps * (average_wait_time + movement_wait_time)
+    print(f"Total duration of the test: {total_duration} seconds ({total_duration / 60} minutes)")
+    print(f"Total number of steps in the test: {total_steps}")
+    
+    # Set start time for file naming
+    start_time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
     result_dict = {
         "start_time": start_time_str,
-        "end_time": end_time_str,
         "total_steps": total_steps,
         "total_duration": total_duration,
         "scan_azimuth_step": scan_azimuth_step,
@@ -129,20 +99,42 @@ if __name__ == "__main__":
         "end_elevation": end_elevation,
         "average_wait_time": average_wait_time,
         "movement_wait_time": movement_wait_time,
-        "result_list": result_list
     }
     
-    # add radio information to the result
+    # Add radio information to result
     result_dict.update(radio_info_dict)
+    result_list = []
     
-    # dump the result to a json file
-    folder = "results"
-    filename = os.path.join(f"{start_time_str}_{end_time_str}_{total_steps}.json")
-    with open(filename, "w") as f:
-        json.dump(result_dict, f)
+    # Begin test
+    elevation_counter = 0
+    for elevation in range(start_elevation, end_elevation, scan_elevation_step):
+        if elevation_counter % 2 == 0:
+            # Left to right azimuth scan
+            for azimuth in range(start_azimuth, end_azimuth + scan_azimuth_step, scan_azimuth_step):
+                print(f"Taking measurement at azimuth: {azimuth}, elevation: {elevation}")
+                set_azimuth_elevation(rig_socket, azimuth, elevation)
+                time.sleep(movement_wait_time)
+                dfbs = take_measurement(gqrx_socket, average_wait_time)
+                result_list.append((azimuth, elevation, dfbs))
+        else:
+            # Right to left azimuth scan
+            for azimuth in range(end_azimuth, start_azimuth - scan_azimuth_step, -scan_azimuth_step):
+                print(f"Taking measurement at azimuth: {azimuth}, elevation: {elevation}")
+                set_azimuth_elevation(rig_socket, azimuth, elevation)
+                time.sleep(movement_wait_time)
+                dfbs = take_measurement(gqrx_socket, average_wait_time)
+                result_list.append((azimuth, elevation, dfbs))
+
+        elevation_counter += 1
+        print()
     
+    # Ensure data is dumped and connections are closed
+    dump_json(result_dict, result_list)
+    close_gqrx_socket(gqrx_socket)
+    close_rigctl_socket(rig_socket)
+    print("Data saved and connections closed.")
     
-    # generate a simple plot to show the data
+    # Generate plot
     import matplotlib.pyplot as plt
     import numpy as np
     
@@ -157,4 +149,3 @@ if __name__ == "__main__":
     ax.set_ylabel('Elevation')
     ax.set_zlabel('dfbs')
     plt.show()
-    
