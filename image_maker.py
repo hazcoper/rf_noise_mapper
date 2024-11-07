@@ -3,7 +3,7 @@ import matplotlib
 from scipy.interpolate import griddata
 import json
 import os
-
+import argparse
 
 matplotlib.use('TkAgg')
 
@@ -13,13 +13,14 @@ import matplotlib.pyplot as plt
 def load_data(file_name="results/data.txt"):
     """
     Load data from file and return it as a list of tuples in the format (azimuth, elevation, dbfs).
-    this is a legacy method
+    This is a legacy method.
     """
     with open(file_name, "r") as f:
         data = f.readlines()
     
     data = [tuple(map(float, line.strip().split(", "))) for line in data]
     return data
+
 
 def load_json_data(filename="results/data.json"):
     """
@@ -30,14 +31,25 @@ def load_json_data(filename="results/data.json"):
     return data
 
 
+def get_global_color_scale(data_list):
+    """
+    Get the global minimum and maximum values of noise across all datasets for a fixed color scale.
+    """
+    all_noise_values = []
+    for data in data_list:
+        all_noise_values.extend([d[2] for d in data])  # Assuming the third element is 'noise' (dbfs)
+    
+    return min(all_noise_values), max(all_noise_values)
 
-def plot_noise_data(data, plot_type='polar'):
+
+def plot_noise_data(metadata, data, plot_type='polar', vmin=None, vmax=None):
     """
     Plots noise data from a ground station as either a 2D polar heatmap or a 3D scatter plot.
     
     Parameters:
     - data: list of tuples (azimuth, elevation, noise)
-    - plot_type: 'polar' for 2D polar heatmap, '3d' for 3D scatter plot
+    - plot_type: 'polar' for polar heatmap, '2d' for 2D heatmap, '3d' for 3D scatter plot
+    - vmin, vmax: Fixed color scale limits
     
     Returns:
     - A matplotlib plot of the noise data.
@@ -48,11 +60,17 @@ def plot_noise_data(data, plot_type='polar'):
     elevation = data[:, 1]
     noise = data[:, 2]
     
+    # If no global vmin/vmax is provided, use the range from the data
+    if vmin is None or vmax is None:
+        vmin = noise.min()
+        vmax = noise.max()
+
     if plot_type == '2d':
-        # Define azimuth and elevation ranges
+        # x_labels = list(range(10, 360, 5))   # Azimuth range (10° to 355° in 5° increments)
+        # y_labels = list(range(10, 40, 10))   # Elevation range (10° to 30° in 10° increments)
         
-        x_labels = list(range(10, 360, 5))   # Azimuth range (10° to 355° in 5° increments)
-        y_labels = list(range(10, 40, 10))   # Elevation range (10° to 30° in 10° increments)
+        x_labels = list(range(metadata["start_azimuth"], metadata["end_azimuth"] + metadata["scan_azimuth_step"], metadata["scan_azimuth_step"]))
+        y_labels = list(range(metadata["start_elevation"], metadata["end_elevation"], metadata["scan_elevation_step"]))
         
         # Create an empty array for the image
         image_array = np.zeros((len(y_labels), len(x_labels)))
@@ -67,16 +85,12 @@ def plot_noise_data(data, plot_type='polar'):
                 # Update the noise value at the calculated pixel
                 image_array[y_pixel, x_pixel] = noise
             except ValueError:
-                # If azimuth or elevation is out of range, skip this data point
                 continue
 
         # Plot the heatmap
         fig, ax = plt.subplots(figsize=(8, 6))
-        plt.subplots_adjust(left=0.05, right=0.99)  # Adjust as needed
-        # plt.tight_layout()
-        im = ax.imshow(image_array, aspect='auto', origin='lower', cmap='viridis')
+        im = ax.imshow(image_array, aspect='auto', origin='lower', cmap='viridis', vmin=vmin, vmax=vmax)
 
-        # Set tick labels
         ax.set_xticks(np.arange(len(x_labels)))
         ax.set_yticks(np.arange(len(y_labels)))
         
@@ -84,18 +98,15 @@ def plot_noise_data(data, plot_type='polar'):
         ax.set_yticklabels(y_labels)
         ax.margins(x=0, y=0) 
         
-        # Add labels and colorbar
         ax.set_xlabel("Azimuth (°)")
         ax.set_ylabel("Elevation (°)")
         ax.set_title(f"Antenna Noise Level (2D Heatmap) {metadata['start_time']}")
         cbar = ax.figure.colorbar(im, ax=ax)
         cbar.ax.set_ylabel("Noise Level (dBfs)", rotation=-90, va="bottom")
         
-        # change the window size
         fig.set_size_inches(30, 5)
-            
-            
-    if plot_type == '2d-interp':
+
+    elif plot_type == '2d-interp':
         # Create a grid for azimuth and elevation
         grid_azimuth, grid_elevation = np.meshgrid(
             np.linspace(azimuth.min(), azimuth.max(), 100),
@@ -105,86 +116,82 @@ def plot_noise_data(data, plot_type='polar'):
         # Interpolate noise data to fill the grid
         grid_noise = griddata((azimuth, elevation), noise, (grid_azimuth, grid_elevation), method='cubic')
         
-        # Create the heatmap plot
         plt.figure(figsize=(10, 8))
-        plt.contourf(grid_azimuth, grid_elevation, grid_noise, 100, cmap='viridis')
+        plt.contourf(grid_azimuth, grid_elevation, grid_noise, 100, cmap='viridis', vmin=vmin, vmax=vmax)
         plt.colorbar(label="Noise Level (dB)")
         plt.xlabel("Azimuth (°)")
         plt.ylabel("Elevation (°)")
         plt.title(f"Antenna Noise Level (interpolated) (2D Heatmap) {metadata['start_time']}")
-    
-    if plot_type == 'polar':
-        # Convert azimuth to radians and elevation to radial distance
+
+    elif plot_type == 'polar':
         azimuth_rad = np.radians(azimuth)
         elevation_rad = np.radians(90 - elevation)  # Inverted for polar radius
 
-        # Create polar scatter plot
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(8, 8))
-        sc = ax.scatter(azimuth_rad, elevation_rad, c=noise, cmap='viridis', s=20)
+        sc = ax.scatter(azimuth_rad, elevation_rad, c=noise, cmap='viridis', s=20, vmin=vmin, vmax=vmax)
 
-        # Add a color bar
         cbar = plt.colorbar(sc, ax=ax, label="Noise Level (dBfs)")
-        ax.set_theta_zero_location("N")  # Set North on top
-        ax.set_theta_direction(-1)  # Azimuth goes clockwise
-        ax.set_yticklabels([])  # Optional: remove radial labels for a cleaner look
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
+        ax.set_yticklabels([])
         plt.title(f"Antenna Noise Level (Polar Plot) {metadata['start_time']}")
         
-    if plot_type == 'polar-interp':
-        # Convert azimuth to radians and elevation to radial distance (inverted for polar plot)
+    elif plot_type == 'polar-interp':
         azimuth_rad = np.radians(azimuth)
         elevation_rad = np.radians(90 - elevation)
         
-        # Create a grid for azimuth and elevation in polar coordinates
         grid_azimuth, grid_elevation = np.meshgrid(
-            np.linspace(0, 2 * np.pi, 100),  # Full 360-degree azimuth
+            np.linspace(0, 2 * np.pi, 100),
             np.linspace(elevation_rad.min(), elevation_rad.max(), 100)
         )
         
-        # Interpolate noise data onto the polar grid
         grid_noise = griddata((azimuth_rad, elevation_rad), noise, (grid_azimuth, grid_elevation), method='cubic')
 
-        # Create polar plot
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(8, 8))
-        # Fill the plot area with interpolated noise levels
-        c = ax.contourf(grid_azimuth, grid_elevation, grid_noise, 100, cmap='viridis')
+        c = ax.contourf(grid_azimuth, grid_elevation, grid_noise, 100, cmap='viridis', vmin=vmin, vmax=vmax)
         
-        # Add a color bar
         cbar = plt.colorbar(c, ax=ax, pad=0.1, label="Noise Level (dBfs)")
-        ax.set_theta_zero_location("N")  # North at the top
-        ax.set_theta_direction(-1)       # Clockwise azimuth
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
         plt.title(f"Antenna Noise Level (interpolated) (Polar Plot) {metadata['start_time']}")
         
         
-    # Save the plot as an image
-    # start time in file name   
+    # Save the plot as an image with high resolution
     start_time = metadata["start_time"]
-    plt.savefig(f"results/{start_time}_{plot_type}.png")
+    plt.savefig(f"results/{start_time}_{plot_type}.png", dpi=300)
 
 
-import argparse
+def main():
 
-if __name__ == "__main__":
+
     parser = argparse.ArgumentParser(description="Plot noise data from a file.")
     parser.add_argument('--file', type=str, default="results/data.txt", help="Path to the data file.")
     args = parser.parse_args()
 
     # Load data from the specified file
     if args.file.endswith('.json'):
+        print("Loading file: ", args.file)
         metadata = load_json_data(args.file)
     else:
         # find the latest json file
         files = os.listdir("results")
         files = [file for file in files if file.endswith(".json")]
         files.sort()
+        print("Loading latest file: ", files[-1])
         metadata = load_json_data(f"results/{files[-1]}")
         
-        
-    # lets conver the data to be able to use with the plot_noise_data function
+
+    vmin = -90
+    vmax = -65
+    
     data = metadata["result_list"]
-       
-    plot_noise_data(metadata, data, "2d")
-    plot_noise_data(metadata, data, "polar")
-    plot_noise_data(metadata, data, "2d-interp")
-    plot_noise_data(metadata, data, "polar-interp")
-    
-    
+
+
+    plot_noise_data(metadata, data, "2d", vmin, vmax)
+    plot_noise_data(metadata, data, "polar", vmin, vmax)
+    plot_noise_data(metadata, data, "2d-interp", vmin, vmax)
+    plot_noise_data(metadata, data, "polar-interp", vmin, vmax)
+
+
+if __name__ == "__main__":
+    main()
