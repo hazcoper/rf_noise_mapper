@@ -87,7 +87,7 @@ def plot_noise_data(data, plot_type='polar'):
         # Add labels and colorbar
         ax.set_xlabel("Azimuth (°)")
         ax.set_ylabel("Elevation (°)")
-        ax.set_title("Antenna Noise Level (2D Heatmap)")
+        ax.set_title(f"Antenna Noise Level (2D Heatmap) {metadata['start_time']}")
         cbar = ax.figure.colorbar(im, ax=ax)
         cbar.ax.set_ylabel("Noise Level (dBfs)", rotation=-90, va="bottom")
         
@@ -111,7 +111,7 @@ def plot_noise_data(data, plot_type='polar'):
         plt.colorbar(label="Noise Level (dB)")
         plt.xlabel("Azimuth (°)")
         plt.ylabel("Elevation (°)")
-        plt.title("Antenna Noise Level (interpolated) (2D Heatmap)")
+        plt.title(f"Antenna Noise Level (interpolated) (2D Heatmap) {metadata['start_time']}")
     
     if plot_type == 'polar':
         # Convert azimuth to radians and elevation to radial distance
@@ -127,7 +127,7 @@ def plot_noise_data(data, plot_type='polar'):
         ax.set_theta_zero_location("N")  # Set North on top
         ax.set_theta_direction(-1)  # Azimuth goes clockwise
         ax.set_yticklabels([])  # Optional: remove radial labels for a cleaner look
-        plt.title("Antenna Noise Level (Polar Plot)")
+        plt.title(f"Antenna Noise Level (Polar Plot) {metadata['start_time']}")
         
     if plot_type == 'polar-interp':
         # Convert azimuth to radians and elevation to radial distance (inverted for polar plot)
@@ -152,7 +152,7 @@ def plot_noise_data(data, plot_type='polar'):
         cbar = plt.colorbar(c, ax=ax, pad=0.1, label="Noise Level (dBfs)")
         ax.set_theta_zero_location("N")  # North at the top
         ax.set_theta_direction(-1)       # Clockwise azimuth
-        plt.title("Antenna Noise Level (interpolated) (Polar Plot)")
+        plt.title(f"Antenna Noise Level (interpolated) (Polar Plot) {metadata['start_time']}")
         
         
     # Save the plot as an image
